@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use web_sys::HtmlAudioElement;
 use crate::components::*;
+use crate::effects::{CritterExplodeEvent, trigger_critter_explosion};
 use crate::resources::*;
 use crate::game::*;
 use web_sys::console;
@@ -409,13 +410,25 @@ pub fn critter_interaction_system(
     asset_server: Res<AssetServer>,
     critter_sounds: Option<Res<CritterSounds>>,
     mut audio_gate: ResMut<AudioGate>,
+    mut explosion_events: EventWriter<CritterExplodeEvent>,
 ) {
+    // DEBUG: Log when interaction events are received
+    let event_count = interaction_events.len();
+    if event_count > 0 {
+        console::log_1(&format!("🎯 Processing {} critter interaction events", event_count).into());
+    }
     for event in interaction_events.read() {
         if let Ok((entity, critter, transform, anim)) = critter_query.get(event.critter_entity) {
             match event.interaction_type {
                 InteractionType::Tap => {
                     // Unlock audio due to user gesture
                     audio_gate.enabled = true;
+                    
+                    // 🎆 TRIGGER EXPLOSION EFFECT before despawning!
+                    trigger_critter_explosion(transform.translation, &mut explosion_events);
+                    console::log_1(&format!("🎆 Ribbon explosion triggered at ({:.1}, {:.1})", 
+                        transform.translation.x, transform.translation.y).into());
+                    
                     // When critter is tapped, it disappears and gives points
                     commands.entity(entity).despawn();
                     
@@ -463,6 +476,9 @@ pub fn critter_interaction_system(
                     console_log!("🎯 {} was caught and disappeared!", critter.name);
                 }
                 InteractionType::Swipe(_) => {
+                    // 🎆 TRIGGER EXPLOSION EFFECT for swipe too!
+                    trigger_critter_explosion(transform.translation, &mut explosion_events);
+                    
                     // Swipe still makes critters disappear but gives fewer points
                     commands.entity(entity).despawn();
                     
@@ -475,9 +491,12 @@ pub fn critter_interaction_system(
                         achievement: None,
                     });
                     
-                    console_log!("💨 {} was swiped away!", critter.name);
+                    console_log!("💨 {} was swiped away with ribbons!", critter.name);
                 }
                 InteractionType::Hold => {
+                    // 🎆 TRIGGER EXPLOSION EFFECT for hold too!
+                    trigger_critter_explosion(transform.translation, &mut explosion_events);
+                    
                     // Hold interaction also removes critter
                     commands.entity(entity).despawn();
                     
@@ -490,7 +509,7 @@ pub fn critter_interaction_system(
                         achievement: None,
                     });
                     
-                    console_log!("✋ {} was held and disappeared!", critter.name);
+                    console_log!("✋ {} was held and exploded into ribbons!", critter.name);
                 }
             }
         }

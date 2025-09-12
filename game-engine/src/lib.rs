@@ -7,6 +7,7 @@ use std::collections::VecDeque;
 
 mod audio;
 mod components;
+mod effects;
 mod events;
 mod game;
 mod resources;
@@ -63,7 +64,8 @@ pub fn main() {
     #[cfg(feature = "console_error_panic_hook")]
     set_panic_hook();
 
-    console::log_1(&"🐕 App4.Dog Game Engine Starting... [v2024-ERROR-CHECK]".into());
+    let build_timestamp = env!("BUILD_TIMESTAMP");
+    console::log_1(&format!("🐕 App4.Dog Game Engine Starting... [v2024-EXPLOSION-FIX] Built: {}", build_timestamp).into());
     
     App::new()
         .add_plugins(WebAssetPlugin::default())
@@ -86,6 +88,7 @@ pub fn main() {
         .add_plugins(GamePlugin)
         .add_plugins(EventBridgePlugin)
         .add_plugins(PlatformAudioPlugin)
+        .add_plugins(effects::ExplosionEffectsPlugin)
         .add_systems(Update, (
             process_load_critter_queue,
             process_interaction_queue,
@@ -311,6 +314,11 @@ fn process_interaction_queue(
     mut audio_gate: ResMut<resources::AudioGate>,
 ) {
     if let Ok(mut queue) = INTERACTION_QUEUE.lock() {
+        let queue_size = queue.len();
+        if queue_size > 0 {
+            console::log_1(&format!("🎯 Processing {} interactions from queue", queue_size).into());
+        }
+        
         while let Some((interaction_type, screen_x, screen_y, _dir_x, _dir_y)) = queue.pop_front() {
             // Convert screen coordinates to world coordinates
             let Ok(window) = window_query.single() else { continue; };
@@ -331,6 +339,10 @@ fn process_interaction_queue(
             // Find the closest critter to the click position  
             // Unlock audio due to user gesture
             audio_gate.enabled = true;
+            
+            let critter_count = critter_query.iter().count();
+            console::log_1(&format!("🎯 Found {} critters in scene", critter_count).into());
+            
             for (entity, transform) in &critter_query {
                 let critter_pos = transform.translation.xy();
                 let critter_size = 100.0; // Larger clickable area radius for easier clicking

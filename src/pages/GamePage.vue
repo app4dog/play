@@ -116,63 +116,6 @@
             class="full-width q-mb-sm"
           />
           <q-btn
-            color="positive"
-            label="Play Test Sound"
-            size="md"
-            @click="playTestSound"
-            class="full-width q-mb-sm"
-          />
-          <q-btn
-            color="orange"
-            label="🎵 Test Bevy Audio Bridge"
-            size="md"
-            @click="testBevyAudio"
-            :disable="!eventBridgeReady"
-            class="full-width q-mb-sm"
-          />
-          <q-btn
-            color="orange-7"
-            label="🎵 Play Provided MP3 (bridge)"
-            size="sm"
-            @click="testBevyAudioProvided"
-            :disable="!eventBridgeReady"
-            class="full-width q-mb-sm"
-          />
-          <q-btn
-            color="purple"
-            label="🎶 Test Native Audio (b00t)"
-            size="md"
-            @click="testNativeAudio"
-            :disable="!nativeAudioReady"
-            class="full-width q-mb-sm"
-          />
-          <q-btn
-            color="purple-7"
-            label="🎶 Play Provided MP3 (native)"
-            size="sm"
-            @click="testNativeAudioProvided"
-            :disable="!nativeAudioReady"
-            class="full-width q-mb-sm"
-          />
-          <div class="row q-gutter-sm q-mb-sm">
-            <q-btn
-              color="green"
-              label="🚪 Enter Sound"
-              size="sm"
-              @click="playEnterSound"
-              :disable="!nativeAudioReady"
-              class="col"
-            />
-            <q-btn
-              color="red"
-              label="🚪 Exit Sound"
-              size="sm"
-              @click="playExitSound"
-              :disable="!nativeAudioReady"
-              class="col"
-            />
-          </div>
-          <q-btn
             color="secondary"
             label="Select Critter"
             size="md"
@@ -286,6 +229,11 @@ const { settings, sendToBevy: sendSettingsToBevy } = useSettings()
 
 // Initialize game on mount
 onMounted(() => {
+  // TODO: Temporarily disable background music globally
+  window.__A4D_DISABLE_BGM__ = true
+  bgmGloballyDisabled.value = true  // Make reactive ref aware of the change
+  console.log('🎼 Background music disabled globally via __A4D_DISABLE_BGM__')
+  
   initializeGame()
   loadGameStats()
 })
@@ -336,11 +284,9 @@ const onScoreChanged = (score: number) => {
 const onAudioReady = () => {
   audioReady.value = true
   $q.notify({ type: 'positive', message: '🔊 Audio ready', position: 'top', timeout: 1200 })
-  // Apply settings: start/volume BGM
-  if (!bgmGloballyDisabled.value && settings.music_enabled) {
-    void gameCanvas.value?.startBackgroundMusic?.()
-    gameCanvas.value?.setBackgroundMusicVolume?.(settings.bgm_volume)
-  } else if (bgmGloballyDisabled.value) {
+  // NOTE: Removed automatic BGM start to prevent race condition with startGame()
+  // BGM will be started explicitly in startGame() when user clicks Start Game
+  if (bgmGloballyDisabled.value) {
     $q.notify({ type: 'warning', message: '🎼 BGM disabled globally', position: 'top', timeout: 1500 })
   }
 }

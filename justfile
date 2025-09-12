@@ -31,11 +31,11 @@ rebuild-wasm: clean-wasm build-wasm
 
 wasm-dev:
     @echo "🔄 Building WASM in development mode..."
-    cd game-engine && wasm-pack build --target web --out-dir ../public/wasm --dev
+    WASM_MODE=dev ./scripts/build-wasm.sh
 
 wasm-release:
     @echo "🚀 Building WASM in release mode..."
-    cd game-engine && wasm-pack build --target web --out-dir ../public/wasm --release
+    WASM_MODE=release ./scripts/build-wasm.sh
 
 # Mobile development
 dev-android: build-wasm
@@ -148,7 +148,7 @@ release: clean install wasm-release build
 ci-build-wasm:
     @echo "🦀 Building WASM for CI..."
     @chmod +x scripts/build-wasm.sh
-    @./scripts/build-wasm.sh
+    @WASM_MODE=release ./scripts/build-wasm.sh
 
 ci-build: ci-build-wasm
     @echo "🏗️ Building application for CI..."

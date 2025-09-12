@@ -3,10 +3,25 @@
 # Build script for Rust/Bevy game engine to WASM
 set -e
 
-echo "🦀 Building App4.Dog Game Engine (Rust -> WASM)"
+# Determine build mode: dev by default for faster iteration, release when specified
+MODE=${WASM_MODE:-dev}
+
+echo "🦀 Building App4.Dog Game Engine (Rust -> WASM) [${MODE} mode]"
 
 # Load Rust environment
 . ~/.cargo/env 2>/dev/null || true
+
+# Setup sccache if available for faster incremental builds
+if command -v sccache &> /dev/null; then
+    echo "⚡ Using sccache for faster incremental builds"
+    export RUSTC_WRAPPER=sccache
+fi
+
+# Enable incremental compilation for dev builds
+if [ "$MODE" = "dev" ]; then
+    export CARGO_INCREMENTAL=1
+    echo "🔄 Incremental compilation enabled for faster dev builds"
+fi
 
 # Check if required tools are installed (check both PATH and cargo bin)
 if ! command -v wasm-pack &> /dev/null && ! [ -f ~/.cargo/bin/wasm-pack ]; then
@@ -17,27 +32,42 @@ fi
 # Navigate to game engine directory
 cd game-engine
 
-# Build for web target using absolute path if needed
-echo "🏗️ Building WASM module..."
-if command -v wasm-pack &> /dev/null; then
-    wasm-pack build --target web --out-dir ../public/wasm --release
+# Set RUSTFLAGS for WebGPU APIs
+export RUSTFLAGS="--cfg=web_sys_unstable_apis"
+
+# Build with appropriate settings for mode
+if [ "$MODE" = "release" ]; then
+    echo "🏗️ Building WASM module (RELEASE) with full optimizations..."
+    BUILD_FLAGS="--release"
 else
-    ~/.cargo/bin/wasm-pack build --target web --out-dir ../public/wasm --release
+    echo "🚀 Building WASM module (DEV) for fast iteration..."
+    BUILD_FLAGS="--dev"
 fi
 
-# Post-process with wasm-opt for additional size reduction
-if command -v wasm-opt &> /dev/null; then
-    echo "🗜️ Optimizing WASM with wasm-opt..."
-    # Enable required WASM features for Bevy (using faster -O2 instead of -Oz for speed)
-    timeout 60s wasm-opt -O2 \
-        --enable-bulk-memory \
-        --enable-nontrapping-float-to-int \
-        --enable-sign-ext \
-        --enable-reference-types \
-        ../public/wasm/app4dog_game_engine_bg.wasm \
-        -o ../public/wasm/app4dog_game_engine_bg.wasm || echo "⚠️ wasm-opt timed out - WASM files are still functional"
+# Build using wasm-pack with --no-typescript (we generate our own TS bindings)
+if command -v wasm-pack &> /dev/null; then
+    wasm-pack build --target web --out-dir ../public/wasm $BUILD_FLAGS --no-typescript
 else
-    echo "⚠️ wasm-opt not found - skipping optimization (install with: npm install -g binaryen)"
+    ~/.cargo/bin/wasm-pack build --target web --out-dir ../public/wasm $BUILD_FLAGS --no-typescript
+fi
+
+# Only run wasm-opt for release builds (or when explicitly requested)
+if [ "$MODE" = "release" ] || [ "$WASM_OPT" = "1" ]; then
+    if command -v wasm-opt &> /dev/null; then
+        echo "🗜️ Optimizing WASM with wasm-opt..."
+        # Enable required WASM features for Bevy (using faster -O2 instead of -Oz for speed)
+        timeout 60s wasm-opt -O2 \
+            --enable-bulk-memory \
+            --enable-nontrapping-float-to-int \
+            --enable-sign-ext \
+            --enable-reference-types \
+            ../public/wasm/app4dog_game_engine_bg.wasm \
+            -o ../public/wasm/app4dog_game_engine_bg.wasm || echo "⚠️ wasm-opt timed out - WASM files are still functional"
+    else
+        echo "⚠️ wasm-opt not found - skipping optimization (install with: npm install -g binaryen)"
+    fi
+else
+    echo "⏩ Skipping wasm-opt for faster dev builds (set WASM_OPT=1 to force)"
 fi
 
 # Files are automatically available via symlink: public/game-engine -> game-engine/pkg
