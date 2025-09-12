@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use std::collections::VecDeque;
 
 mod audio;
+mod bluetoothle;
 mod components;
 mod effects;
 mod events;
@@ -14,6 +15,7 @@ mod resources;
 mod systems;
 
 use audio::{PlatformAudioPlugin, send_audio_response_to_bevy};
+use bluetooth::{BluetoothPlugin, BluetoothRequest, BluetoothResponse, DeviceId, BluetoothDeviceFilter, create_test_virtual_devices};
 use events::{EventBridgePlugin, BevyToJsEvent, send_js_to_bevy_event};
 use game::{GamePlugin, LoadCritterEvent, SpawnCritterEvent};
 use systems::process_click_on_critters;
@@ -23,6 +25,8 @@ static LOAD_CRITTER_QUEUE: Mutex<VecDeque<LoadCritterEvent>> = Mutex::new(VecDeq
 static INTERACTION_QUEUE: Mutex<VecDeque<(String, f32, f32, f32, f32)>> = Mutex::new(VecDeque::new());
 static AUDIO_EVENT_QUEUE: Mutex<VecDeque<BevyToJsEvent>> = Mutex::new(VecDeque::new());
 static NATIVE_AUDIO_QUEUE: Mutex<VecDeque<audio::AudioRequest>> = Mutex::new(VecDeque::new());
+static BLUETOOTH_REQUEST_QUEUE: Mutex<VecDeque<BluetoothRequest>> = Mutex::new(VecDeque::new());
+static BLUETOOTH_RESPONSE_QUEUE: Mutex<VecDeque<BluetoothResponse>> = Mutex::new(VecDeque::new());
 
 // Shared critter list snapshot for UI consumption
 #[derive(Clone, Debug)]
@@ -88,12 +92,15 @@ pub fn main() {
         .add_plugins(GamePlugin)
         .add_plugins(EventBridgePlugin)
         .add_plugins(PlatformAudioPlugin)
+        .add_plugins(BluetoothPlugin)
         .add_plugins(effects::ExplosionEffectsPlugin)
         .add_systems(Update, (
             process_load_critter_queue,
             process_interaction_queue,
             process_audio_event_queue,
             process_native_audio_queue,
+            process_bluetooth_request_queue,
+            process_bluetooth_response_queue,
         ))
         .run();
 }
@@ -240,6 +247,130 @@ impl GameEngine {
     pub fn play_exit_sound(&self) -> String {
         console::log_1(&"🚪 Playing exit sound".into());
         self.play_audio_native("exit_area", Some(0.7))
+    }
+
+    /// Start Bluetooth device scan
+    #[wasm_bindgen]
+    pub fn start_bluetooth_scan(&self, duration_ms: Option<u32>) -> String {
+        let request_id = format!("bt-scan-{}", js_sys::Date::now() as u64);
+        console::log_1(&format!("🔵 Starting Bluetooth scan (request_id: {})", request_id).into());
+        
+        if let Ok(mut queue) = BLUETOOTH_REQUEST_QUEUE.lock() {
+            queue.push_back(BluetoothRequest::StartScan {
+                duration_ms,
+                device_filter: None, // Can be extended later
+            });
+        }
+        
+        request_id
+    }
+
+    /// Stop Bluetooth device scan
+    #[wasm_bindgen]
+    pub fn stop_bluetooth_scan(&self) {
+        console::log_1(&"🔵 Stopping Bluetooth scan".into());
+        
+        if let Ok(mut queue) = BLUETOOTH_REQUEST_QUEUE.lock() {
+            queue.push_back(BluetoothRequest::StopScan);
+        }
+    }
+
+    /// Connect to a Bluetooth device
+    #[wasm_bindgen]
+    pub fn connect_bluetooth_device(&self, device_id: &str) -> String {
+        let request_id = format!("bt-connect-{}", js_sys::Date::now() as u64);
+        console::log_1(&format!("🔵 Connecting to device: {} (request_id: {})", device_id, request_id).into());
+        
+        if let Ok(mut queue) = BLUETOOTH_REQUEST_QUEUE.lock() {
+            queue.push_back(BluetoothRequest::Connect {
+                device_id: DeviceId(device_id.to_string()),
+            });
+        }
+        
+        request_id
+    }
+
+    /// Disconnect from a Bluetooth device
+    #[wasm_bindgen]
+    pub fn disconnect_bluetooth_device(&self, device_id: &str) {
+        console::log_1(&format!("🔵 Disconnecting from device: {}", device_id).into());
+        
+        if let Ok(mut queue) = BLUETOOTH_REQUEST_QUEUE.lock() {
+            queue.push_back(BluetoothRequest::Disconnect {
+                device_id: DeviceId(device_id.to_string()),
+            });
+        }
+    }
+
+    /// Enable virtual Bluetooth network for testing
+    #[wasm_bindgen]
+    pub fn enable_virtual_bluetooth(&self) {
+        console::log_1(&"🔵 Enabling virtual Bluetooth network".into());
+        
+        if let Ok(mut queue) = BLUETOOTH_REQUEST_QUEUE.lock() {
+            queue.push_back(BluetoothRequest::EnableVirtualNetwork);
+            
+            // Register test devices
+            for virtual_device in create_test_virtual_devices() {
+                queue.push_back(BluetoothRequest::RegisterVirtualDevice {
+                    device: virtual_device,
+                });
+            }
+        }
+    }
+
+    /// Disable virtual Bluetooth network
+    #[wasm_bindgen]
+    pub fn disable_virtual_bluetooth(&self) {
+        console::log_1(&"🔵 Disabling virtual Bluetooth network".into());
+        
+        if let Ok(mut queue) = BLUETOOTH_REQUEST_QUEUE.lock() {
+            queue.push_back(BluetoothRequest::DisableVirtualNetwork);
+        }
+    }
+
+    /// Send a command to a Bluetooth device (Zephyr protocol)
+    #[wasm_bindgen]
+    pub fn send_bluetooth_command(&self, device_id: &str, command_json: &str) -> String {
+        let request_id = format!("bt-cmd-{}", js_sys::Date::now() as u64);
+        console::log_1(&format!("🔵 Sending command to {}: {} (request_id: {})", 
+            device_id, command_json, request_id).into());
+        
+        // Parse command JSON - for now use a simple command
+        // In practice this would deserialize from JSON to ZephyrCommand
+        if let Ok(mut queue) = BLUETOOTH_REQUEST_QUEUE.lock() {
+            // Simplified command parsing for demo
+            let command = if command_json.contains("battery") {
+                bluetooth::ZephyrCommand::GetBatteryLevel
+            } else if command_json.contains("info") {
+                bluetooth::ZephyrCommand::GetDeviceInfo
+            } else {
+                bluetooth::ZephyrCommand::GetDeviceInfo // Default
+            };
+            
+            queue.push_back(BluetoothRequest::SendCommand {
+                device_id: DeviceId(device_id.to_string()),
+                command,
+                timeout_ms: Some(5000),
+            });
+        }
+        
+        request_id
+    }
+
+    /// Get Bluetooth status and discovered devices
+    #[wasm_bindgen]
+    pub fn get_bluetooth_status(&self) -> js_sys::Object {
+        let status = js_sys::Object::new();
+        
+        // This would read from Bluetooth manager state
+        // For now, return basic status
+        js_sys::Reflect::set(&status, &"scanning".into(), &false.into()).unwrap();
+        js_sys::Reflect::set(&status, &"connectedDevices".into(), &0.into()).unwrap();
+        js_sys::Reflect::set(&status, &"discoveredDevices".into(), &0.into()).unwrap();
+        js_sys::Reflect::set(&status, &"virtualNetworkEnabled".into(), &false.into()).unwrap();
+        
+        status
     }
 }
 
@@ -391,6 +522,32 @@ fn process_native_audio_queue(
     if let Ok(mut queue) = NATIVE_AUDIO_QUEUE.lock() {
         while let Some(request) = queue.pop_front() {
             audio_requests.write(request);
+        }
+    }
+}
+
+// System to process Bluetooth requests from WASM interface
+fn process_bluetooth_request_queue(
+    mut bluetooth_requests: EventWriter<BluetoothRequest>,
+) {
+    if let Ok(mut queue) = BLUETOOTH_REQUEST_QUEUE.lock() {
+        while let Some(request) = queue.pop_front() {
+            bluetooth_requests.write(request);
+        }
+    }
+}
+
+// System to process Bluetooth responses and forward to WASM interface
+fn process_bluetooth_response_queue(
+    mut bluetooth_responses: EventReader<BluetoothResponse>,
+) {
+    for response in bluetooth_responses.read() {
+        // Forward responses to JavaScript via event system or store in queue
+        // For now, just log them
+        console::log_1(&format!("🔵 Bluetooth response: {:?}", response).into());
+        
+        if let Ok(mut queue) = BLUETOOTH_RESPONSE_QUEUE.lock() {
+            queue.push_back(response.clone());
         }
     }
 }

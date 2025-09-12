@@ -69,6 +69,18 @@
 
       <q-separator inset />
 
+      <!-- Bluetooth Debug Section -->
+      <q-card-section>
+        <div class="text-subtitle2 q-mb-sm">Bluetooth Controls</div>
+        <div class="row q-gutter-sm">
+          <q-btn color="blue" label="🔵 Enable Virtual BLE" size="sm" @click="enableVirtualBluetooth" class="full-width" />
+          <q-btn color="purple" label="🔵 Test Virtual Collar" size="sm" @click="testVirtualCollar" class="full-width" />
+          <q-btn color="indigo" label="🔵 Show BLE Panel" size="sm" @click="showBluetoothPanel = true" class="full-width" />
+        </div>
+      </q-card-section>
+
+      <q-separator inset />
+
       <q-card-section>
         <div class="text-subtitle2 q-mb-sm">Audio Settings</div>
         <div class="row items-center q-gutter-sm">
@@ -84,6 +96,11 @@
         <q-btn flat label="Close" color="primary" v-close-popup />
       </q-card-actions>
     </q-card>
+  </q-dialog>
+
+  <!-- Bluetooth Debug Panel Dialog -->
+  <q-dialog v-model="showBluetoothPanel" position="right" class="bluetooth-dialog">
+    <BluetoothDebugPanel />
   </q-dialog>
     
     <!-- Game menu overlay -->
@@ -198,6 +215,9 @@ interface GameEngine {
 }
 import CritterSelection from '../components/CritterSelection.vue'
 import GameSettings from '../components/GameSettings.vue'
+import BluetoothDebugPanel from '../components/BluetoothDebugPanel.vue'
+import { bluetoothService } from '../services/BluetoothService'
+import type { GameEngine as ExtendedGameEngine } from '../types/GameEngineExtended'
 
 const $q = useQuasar()
 
@@ -209,6 +229,7 @@ const showMenu = ref(true)
 const showCritterSelection = ref(false)
 const showSettings = ref(false)
 const showDebugPanel = ref(false)
+const showBluetoothPanel = ref(false)
 
 // Game stats
 const highScore = ref(0)
@@ -511,6 +532,75 @@ const playExitSound = async () => {
   }
 }
 
+// Bluetooth functions
+const enableVirtualBluetooth = async () => {
+  // Initialize AudioContext on first user interaction
+  await gameCanvas.value?.initializeAudioContext()
+  if (!gameCanvas.value) {
+    $q.notify({ type: 'warning', message: '❌ Game engine not ready', position: 'top' })
+    return
+  }
+
+  try {
+    const gameEngine = gameCanvas.value.getGameEngine() as ExtendedGameEngine
+    if (gameEngine && typeof gameEngine.enable_virtual_bluetooth === 'function') {
+      gameEngine.enable_virtual_bluetooth()
+      
+      // Also enable via service for UI
+      try {
+        await bluetoothService.initialize(gameEngine)
+        await bluetoothService.enableVirtualNetwork()
+      } catch (serviceError) {
+        console.warn('Bluetooth service initialization failed:', serviceError)
+      }
+      
+      $q.notify({ 
+        type: 'positive', 
+        message: '🔵 Virtual Bluetooth network enabled', 
+        position: 'top',
+        timeout: 2000
+      })
+    } else {
+      $q.notify({ type: 'warning', message: '❌ Bluetooth not available', position: 'top' })
+    }
+  } catch (error) {
+    console.error('Failed to enable virtual Bluetooth:', error)
+    $q.notify({ type: 'negative', message: '❌ Failed to enable virtual Bluetooth', position: 'top' })
+  }
+}
+
+const testVirtualCollar = async () => {
+  // Initialize AudioContext on first user interaction
+  await gameCanvas.value?.initializeAudioContext()
+  if (!gameCanvas.value) {
+    $q.notify({ type: 'warning', message: '❌ Game engine not ready', position: 'top' })
+    return
+  }
+
+  try {
+    const gameEngine = gameCanvas.value.getGameEngine() as ExtendedGameEngine
+    if (gameEngine && typeof gameEngine.send_bluetooth_command === 'function') {
+      // Send battery command
+      const batteryRequestId = gameEngine.send_bluetooth_command('virtual_collar_001', '{"battery": {}}')
+      
+      // Send vibrate command
+      const vibrateRequestId = gameEngine.send_bluetooth_command('virtual_collar_001', '{"vibrate": {"intensity": 50, "duration_ms": 1000}}')
+      
+      $q.notify({ 
+        type: 'positive', 
+        message: `🔵 Virtual collar test commands sent (${batteryRequestId}, ${vibrateRequestId})`, 
+        position: 'top',
+        timeout: 3000
+      })
+    } else {
+      $q.notify({ type: 'warning', message: '❌ Bluetooth commands not available', position: 'top' })
+    }
+  } catch (error) {
+    console.error('Failed to test virtual collar:', error)
+    $q.notify({ type: 'negative', message: '❌ Failed to test virtual collar', position: 'top' })
+  }
+}
+
 const startTrainingMode = () => {
   showMenu.value = false
   // Future: start vocabulary training mode
@@ -561,7 +651,9 @@ watch(() => settings.bgm_volume, (v) => {
 watch(() => settings.music_enabled, (enabled) => {
   if (!audioReady.value) return
   if (enabled && !bgmGloballyDisabled.value) {
-    void gameCanvas.value?.startBackgroundMusic?.()
+    gameCanvas.value?.startBackgroundMusic?.().catch(err => {
+      console.warn('Failed to start background music in settings watcher:', err)
+    })
     gameCanvas.value?.setBackgroundMusicVolume?.(settings.bgm_volume)
   } else if (!enabled) {
     gameCanvas.value?.stopBackgroundMusic?.()
@@ -666,5 +758,14 @@ onMounted(() => {
   top: 8px;
   left: 8px;
   z-index: 1000;
+}
+
+.bluetooth-dialog .q-dialog__inner {
+  padding: 0 !important;
+}
+
+.bluetooth-dialog .q-dialog__inner .q-card {
+  margin: 0 !important;
+  max-width: 100vw !important;
 }
 </style>

@@ -43,6 +43,7 @@ web-sys = { version = "0.3", features = [
     "HtmlMediaElement",
     "CustomEvent",
     "CustomEventInit",
+    "console",
 ] }
 js-sys = "0.3"
 serde = { version = "1.0", features = ["derive"] }
@@ -52,6 +53,7 @@ ron = "0.8"
 # specta removed - using manual type sync for simplicity
 wasm-bindgen-futures = "0.4"
 regex-lite = "0.1"
+thiserror = "1.0"
 # Local critter-keeper crate
 critter-keeper = { path = "../../critter-keeper", default-features = false, features = ["bevy"] }
 # Force older ahash version that uses getrandom 0.2
